@@ -9,20 +9,20 @@ from collections import deque
 
 import pyautogui
 from PIL import Image
-from pynput import keyboard
+from pynput import keyboard, mouse
 from pystray import Icon, Menu, MenuItem
 
 # マウス座標が画面左上に行ったときに終了する機能を無効にする
 pyautogui.FAILSAFE = False
 
-# グローバル変数
 mouse_xy = pyautogui.position()
 dx = 100
-interval_time = 10
+max_distance = math.ceil(dx * math.sqrt(5 / 4))
+interval_time = 1
 is_running = True
 
-history_max = 25
-mouse_history = deque([True] * history_max, maxlen=history_max)
+history_max = 250
+controll_history = deque([True] * history_max, maxlen=history_max)
 
 
 def euclidean_distance(point1, point2):
@@ -32,20 +32,21 @@ def euclidean_distance(point1, point2):
 
 def is_used_mouse():
     global mouse_xy
-
-    if not is_running:
-        return False
-
     mouse_xy_current = pyautogui.position()
     distance = euclidean_distance(mouse_xy, mouse_xy_current)
     mouse_xy = mouse_xy_current
 
-    res = distance > abs(dx)
-    mouse_history.append(res)
-    is_not_used = all(not x for x in mouse_history)
+    res = distance > max_distance
 
-    # mouse_historyの内容を表示
-    print(f"マウス履歴: {list(mouse_history)}, 使用中: {not is_not_used}")
+    controll_history.append(res)
+    is_not_used = all(not x for x in controll_history)
+
+    # print(
+    #     f"操作履歴: {list(controll_history)}, 距離: {distance:.1f} px, 使用中: {not is_not_used}"
+    # )
+
+    if not is_running:
+        return False
 
     return not is_not_used
 
@@ -57,7 +58,7 @@ def is_stop_time():
 
 def mouse_move():
     global dx, is_running
-    check_time_interval = 600  # 10分ごとに時刻をチェック
+    check_time_interval = 600
     last_time_check = time.time()
 
     while True:
@@ -73,31 +74,34 @@ def mouse_move():
             time.sleep(1)
             continue
 
-        # マウス履歴をチェックして動いていたら何もしない
+        # 操作履歴をチェックして動いていたら何もしない
         if is_used_mouse():
             time.sleep(interval_time)
             continue
 
-        # より激しい動きを実装
         try:
-            # ランダムな方向に移動
-            direction = pyautogui.position()
             rand_x = dx if random.random() > 0.5 else -dx
             rand_y = dx // 2 if random.random() > 0.5 else -dx // 2
 
             pyautogui.move(rand_x, rand_y)
             time.sleep(0.5)  # 短い待機
-            pyautogui.move(-rand_x, -rand_y)  # 元の位置に戻す
         except:
             pyautogui.move(-dx, 0)
 
-        dx = -dx if random.random() > 0.7 else dx  # 70%の確率で方向転換
+        dx = -dx if random.random() > 0.7 else dx
         time.sleep(interval_time)
 
 
-def check_finishkey(key):
+def check_key(key):
+    global controll_history
+    is_continue = True
     if key == keyboard.Key.esc:
-        return False
+        is_continue = False
+        # ESCキーが押されたときにマウスリスナーも停止する
+        mouse_listener.stop()
+    else:
+        controll_history.append(True)
+    return is_continue
 
 
 def setup(icon):
@@ -105,23 +109,21 @@ def setup(icon):
 
 
 def on_start(icon, item):
-    global is_running, mouse_history
+    global is_running, controll_history
     is_running = True
 
-    # mouse_historyをすべてTrueにリセット
-    mouse_history.clear()
+    # historyをすべてTrueにリセット
+    controll_history.clear()
     for _ in range(history_max):
-        mouse_history.append(True)
+        controll_history.append(True)
 
-    print("マウス自動移動を開始しました")
-    print(f"現在のマウス履歴: {list(mouse_history)}")
+    print("メソッドを開始しました")
 
 
 def on_stop(icon, item):
     global is_running
     is_running = False
-    print("マウス自動移動を停止しました")
-    print(f"現在のマウス履歴: {list(mouse_history)}")
+    print("メソッドを停止しました")
 
 
 def on_quit(icon, item):
@@ -129,6 +131,7 @@ def on_quit(icon, item):
     is_running = False
     icon.stop()
     key_listener.stop()
+    mouse_listener.stop()
 
 
 def resource_path(relative_path):
@@ -167,7 +170,29 @@ thread.daemon = True
 thread.start()
 
 
-with keyboard.Listener(on_press=check_finishkey) as key_listener:
-    key_listener.join()
+def on_click(x, y, button, pressed):
+    global controll_history
+    if pressed:  # クリック時（押した時）にのみTrue追加
+        controll_history.append(True)
+    return True  # Listenerを継続
+
+
+def on_scroll(x, y, dx, dy):
+    global controll_history
+    controll_history.append(True)
+    return True  # Listenerを継続
+
+
+# キーボードリスナーとマウスリスナーを作成
+key_listener = keyboard.Listener(on_press=check_key)
+mouse_listener = mouse.Listener(on_click=on_click, on_scroll=on_scroll)
+
+# 両方のリスナーを開始
+key_listener.start()
+mouse_listener.start()
+
+# 両方のリスナーが終了するまで待機
+key_listener.join()
+mouse_listener.join()
 
 sys.exit()
