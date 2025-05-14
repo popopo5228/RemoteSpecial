@@ -1,7 +1,7 @@
 ## そのまま使いたい人
 - Windows
   - `installer`の中のexeを使ってください
-    - [RemoteSpecial01.exe](installer/RS01.exe)
+    - [RS01.exe](installer/RS01.exe)
 - Mac
   - そのうちビルドする予定です
   - 現状は、下記手順で自分でビルドしてください。
